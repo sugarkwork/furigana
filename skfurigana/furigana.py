@@ -1,3 +1,4 @@
+import os
 from typing import List
 import fugashi
 import unidic
@@ -6,9 +7,18 @@ import json
 import asyncio
 import logging
 from typing import List, Dict
-from pmem.async_pmem import PersistentMemory
+from skpmem.async_pmem import PersistentMemory
 import asyncio
 from json_repair import repair_json
+
+
+def unidic_download():
+    import unidic
+    import subprocess
+    import sys
+    # python -m unidic download
+    subprocess.run([sys.executable, '-m', 'unidic', 'download'])
+
 
 class KatakanaTranslator:
     def __init__(self, model: str = "deepseek/deepseek-chat", cache_file: str = "cache.db"):
@@ -230,6 +240,10 @@ def process_word(word) -> list[Moji]:
     return result
 
 def add_furigana(text: str) -> list[Moji]:
+    # Unidic 辞書がなければ自動ダウンロード
+    if not os.path.exists(unidic.DICDIR):
+        unidic_download()
+
     tagger = fugashi.Tagger(f'-d "{unidic.DICDIR}"')
     
     result = []
@@ -253,10 +267,6 @@ async def convert_furigana(text: str) -> list[Moji]:
             result.append(moji)
 
     return result
-
-
-# pip install fugashi[unidic]
-# python -m unidic download
 
 
 async def main():

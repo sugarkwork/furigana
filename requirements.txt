@@ -1,0 +1,4 @@
+skpmem
+fugashi[unidic]
+chat_assistant
+json_repair

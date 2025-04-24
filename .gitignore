@@ -1,2 +1,5 @@
 /.env
 /venv
+/.venv
+cache.db
+chat_log.db

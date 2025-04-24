@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skfurigana"
+version = "0.1.0"
+description = "日本語テキストにふりがなを付与するツール"
+authors = [
+    { name="sugarkwork" }
+]
+readme = ""
+requires-python = ">=3.8"
+license = { text = "MIT" }
+homepage = "https://github.com/sugarkwork/furigana"
+dependencies = [
+    "fugashi[unidic]",
+    "unidic",
+    "skpmem",
+    "json_repair",
+    "chat_assistant"
+]
