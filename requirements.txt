@@ -2,3 +2,4 @@ skpmem
 fugashi[unidic]
 chat_assistant
 json_repair
+litellm==1.67.1
