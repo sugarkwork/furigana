@@ -9,10 +9,9 @@ description = "日本語テキストにふりがなを付与するツール"
 authors = [
     { name="sugarkwork" }
 ]
-readme = ""
+readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
-homepage = "https://github.com/sugarkwork/furigana"
 dependencies = [
     "fugashi[unidic]",
     "unidic",
@@ -20,3 +19,14 @@ dependencies = [
     "json_repair",
     "chat_assistant"
 ]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Natural Language :: Japanese"
+]
+[project.urls]
+Homepage = "https://github.com/sugarkwork/furigana"

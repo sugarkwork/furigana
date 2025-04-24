@@ -3,3 +3,6 @@
 /.venv
 cache.db
 chat_log.db
+/build
+/dist
+/*.egg-info/
