@@ -6,3 +6,5 @@ chat_log.db
 /build
 /dist
 /*.egg-info/
+skfurigana/__pycache__/
+

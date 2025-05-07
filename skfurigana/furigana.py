@@ -12,6 +12,8 @@ import asyncio
 from json_repair import repair_json
 
 
+log_name = "skfurigana"
+
 def unidic_download():
     import unidic
     import subprocess
@@ -20,31 +22,19 @@ def unidic_download():
     subprocess.run([sys.executable, '-m', 'unidic', 'download'])
 
 
+from .chat_assistant_provider import get_chat_assistant
+
 class KatakanaTranslator:
-    def __init__(self, model: str = "deepseek/deepseek-chat", cache_file: str = "cache.db"):
+    def __init__(self, model: str = "deepseek/deepseek-chat"):
         """
         テキスト翻訳クラスの初期化
-        
+
         Args:
             model (str, optional): 使用するAIモデル. デフォルトは"deepseek/deepseek-chat".
         """
-        self.chache = {}
         self.model = model
         self.logger = logging.getLogger(__name__)
-        if isinstance(cache_file, str):
-            self.memory = PersistentMemory(cache_file)
-        elif isinstance(cache_file, PersistentMemory):
-            self.memory = cache_file
-        self.assistant = None
-    
-    def get_assistant(self):
-        if self.assistant:
-            return self.assistant
-
-        from chat_assistant import ChatAssistant
-        self.assistant = ChatAssistant(memory=self.memory)
-        self.assistant.model_manager.change_model(self.model)
-        return self.assistant
+        self.memory = PersistentMemory("cache.db")
 
     def extract_alphanumeric(self, text: str) -> List[str]:
         """
@@ -75,11 +65,10 @@ class KatakanaTranslator:
         prompt_text = ("次の英単語および数字を英語風のカタカナ読みにするとどうなりますか？\n"
                        "Python の dict 型で出力してください。コメントや補足は不要です。\n")
 
-        self.get_assistant()
-        response = await self.assistant.chat("", f"{prompt_text}\n\n{words}")
+        assistant = get_chat_assistant(model=self.model, memory=self.memory)
+        response = await assistant.chat("", f"{prompt_text}\n\n{words}")
         self.logger.debug(response)
-        return json.loads(repair_json(response))    
-    
+        return json.loads(repair_json(response))
 
     async def get_cached_translation(self, text: str) -> str:
         """
@@ -160,22 +149,58 @@ class KatakanaTranslator:
         await self.close()
 
 class Moji:
-    def __init__(self, surface: str = None, kana: str = None, sepalator: bool = False):
+    def __init__(self, surface: str = None, kana: str = None, sepalator: bool = False, tag: bool = False, separator_char: str = ' '):
         self.surface = surface
         self.kana = kana
         self.sepalator = sepalator
+        self.tag = tag
+        self.separator_char = separator_char
+    
+    def set_mode(self, tag: bool=False, sepalator_char: str=' '):
+        self.sepalator_char = sepalator_char
+        self.tag = tag
 
     def __str__(self):
-        if self.kana:
+        if self.kana and self.surface != self.kana:
+            if self.tag:
+                return f'<ruby>{self.surface}<rt>{self.kana}</rt></ruby>'
             return f'[{self.surface}({self.kana})]'
         elif self.sepalator:
-            return ' '
+            return self.separator_char
         else:
             return self.surface
 
     def __repr__(self):
         return str(self)
+    
+    @classmethod
+    def parse(cls, text: str) -> List['Moji']:
+        """
+        <ruby>…<rt>…</rt></ruby> の入った文字列をスキャンし、
+        plain 文字は surface のみの Moji、ruby 部分は kana 付きで tag=True の Moji
+        を返す。
+        """
+        pattern = re.compile(r'<ruby>(?P<surf>.+?)<rt>(?P<kana>.+?)</rt></ruby>')
+        pos = 0
+        result: List[Moji] = []
 
+        for m in pattern.finditer(text):
+            # タグの前のプレーン部分を 1文字ずつ Moji に
+            if m.start() > pos:
+                for ch in text[pos:m.start()]:
+                    result.append(cls(surface=ch))
+            # ruby タグ部分は一つの Moji にまとめて kana 付き、tag=True
+            surf = m.group('surf')
+            kana = m.group('kana')
+            result.append(cls(surface=surf, kana=kana, tag=True))
+            pos = m.end()
+
+        # 残りのプレーン部分
+        if pos < len(text):
+            for ch in text[pos:]:
+                result.append(cls(surface=ch))
+
+        return result
 
 def is_kana(char: str) -> bool:
     return ('\u3040' <= char <= '\u309F') or ('\u30A0' <= char <= '\u30FF')
@@ -256,7 +281,7 @@ def add_furigana(text: str) -> list[Moji]:
        
     return result
 
-async def convert_furigana(text: str) -> list[Moji]:
+async def convert_furigana(text: str, tag: bool = False, separator: bool = True, adjust_ai: bool = True, memory=None) -> list[Moji]:
     furigana = add_furigana(text)
     async with KatakanaTranslator() as translator:
         translated_dict = await translator.translate_dict(text)
@@ -264,22 +289,63 @@ async def convert_furigana(text: str) -> list[Moji]:
         for moji in furigana:
             if moji.surface in translated_dict:
                 moji.kana = translated_dict[moji.surface]
+            if tag:
+                moji.set_mode(tag=tag)
+            if not separator:
+                if moji.sepalator:
+                    continue
             result.append(moji)
+    
+    if adjust_ai:
+        result_text = ''.join(map(str, result))
+        async with get_chat_assistant(memory=memory) as assistant:
+            prmpt = f"""原文にルビを付けました。間違っているルビがあった場合は修正してください。
+修正後のルビ付きの文章のみ出力してください。コメントや補足は不要です。
+
+# 原文
+```
+{text}
+```
+
+# ルビ付き文章
+```
+{result_text}
+```
+"""
+            response = (await assistant.chat("", prmpt)).strip().strip('`').strip()
+            try:
+                result = Moji.parse(response)
+            except Exception as e:
+                logging.error(f"{log_name}: 例外発生: {e}")
+
+    if memory:
+        await memory.flush()
 
     return result
 
 
 async def main():
-    logging.basicConfig(level=logging.INFO)
-    text = """
-    LibreChatのdatabase全体をtext形式でdumpする方法について。
-    お弁当を食べながら空を見上げているうちに、お弁当箱は空になった。
-    a123, http://example.com, superuser, 123456
-    Ubuntuは、Desktop版とServer版の2つのEditionがあります。
-    Mongoの意味は何ですか？知らんけど。GEMINI_API_KEY
-    """
-    result = await convert_furigana(text)
-    print(''.join(map(str, result)))
+    logging.basicConfig(level=logging.ERROR)
+    from skpmem.async_pmem import PersistentMemory
+    async with PersistentMemory("cache.db") as memory:
+        try:
+            text = """
+            LibreChatのdatabase全体をtext形式でdumpする方法について。
+            お弁当を食べながら空を見上げているうちに、お弁当箱は空になった。
+            a123, http://example.com, superuser, 123456
+            Ubuntuは、Desktop版とServer版の2つのEditionがあります。
+            Mongoの意味は何ですか？知らんけど。GEMINI_API_KEY
+            生け花を生き甲斐にした生え抜きの生娘、生絹を生業に生計たてた。
+            生い立ちは生半可ではなかった。
+            """
+            for line in text.split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                result = await convert_furigana(line.strip(), tag=True, separator=False, memory=memory)
+                print(''.join(map(str, result)))
+        except Exception as e:
+            logging.exception(f"{log_name}: 例外発生: {e}")
 
 
 if __name__ == '__main__':
