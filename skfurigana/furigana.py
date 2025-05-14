@@ -281,14 +281,18 @@ def add_furigana(text: str) -> list[Moji]:
        
     return result
 
-async def convert_furigana(text: str, tag: bool = False, separator: bool = True, adjust_ai: bool = True, memory=None) -> list[Moji]:
+async def convert_furigana(text: str, tag: bool = False, separator: bool = True, adjust_ai: bool = True, memory=None, model=None, temperature=None) -> list[Moji]:
     furigana = add_furigana(text)
+
+    flag_set_kana = False
     async with KatakanaTranslator() as translator:
         translated_dict = await translator.translate_dict(text)
         result = []
         for moji in furigana:
             if moji.surface in translated_dict:
                 moji.kana = translated_dict[moji.surface]
+            if moji.kana:
+                flag_set_kana = True
             if tag:
                 moji.set_mode(tag=tag)
             if not separator:
@@ -296,11 +300,17 @@ async def convert_furigana(text: str, tag: bool = False, separator: bool = True,
                     continue
             result.append(moji)
     
-    if adjust_ai:
+    if adjust_ai and flag_set_kana:
         result_text = ''.join(map(str, result))
-        async with get_chat_assistant(memory=memory) as assistant:
-            prmpt = f"""原文にルビを付けました。間違っているルビがあった場合は修正してください。
-修正後のルビ付きの文章のみ出力してください。コメントや補足は不要です。
+        if model is None:
+            model = "deepseek/deepseek-chat"
+        if temperature is None:
+            temperature = 0.0
+        async with get_chat_assistant(memory=memory, model=model, temperature=temperature) as assistant:
+            prmpt = f"""
+原文の漢字とアルファベットにrubyタグを使って読み仮名としてルビを付けました。
+ルビの読み仮名の内容が間違っている場合は修正してください。
+修正後の、完全なルビ付きの文章のみ出力してください。コメントや補足は不要です。
 
 # 原文
 ```
@@ -312,7 +322,7 @@ async def convert_furigana(text: str, tag: bool = False, separator: bool = True,
 {result_text}
 ```
 """
-            response = (await assistant.chat("", prmpt)).strip().strip('`').strip()
+            response = (await assistant.chat("", prmpt.strip())).strip().strip('`').strip()
             try:
                 result = Moji.parse(response)
             except Exception as e:
@@ -342,7 +352,7 @@ async def main():
                 line = line.strip()
                 if not line:
                     continue
-                result = await convert_furigana(line.strip(), tag=True, separator=False, memory=memory)
+                result = await convert_furigana(line.strip(), tag=True, separator=False, memory=memory, adjust_ai=True)
                 print(''.join(map(str, result)))
         except Exception as e:
             logging.exception(f"{log_name}: 例外発生: {e}")
