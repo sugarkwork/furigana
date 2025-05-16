@@ -192,6 +192,10 @@ class Moji:
             # ruby タグ部分は一つの Moji にまとめて kana 付き、tag=True
             surf = m.group('surf')
             kana = m.group('kana')
+            surf_hira = convert_katakana_to_hiragana(kana).strip()
+            kana_hira = convert_katakana_to_hiragana(kana).strip()
+            if surf_hira == kana_hira:
+                kana = ''
             result.append(cls(surface=surf, kana=kana, tag=True))
             pos = m.end()
 
@@ -208,7 +212,7 @@ def is_kana(char: str) -> bool:
 def is_kanji(char: str) -> bool:
     return ('\u4E00' <= char <= '\u9FFF') or ('\u3400' <= char <= '\u4DBF') or ('\uF900' <= char <= '\uFAFF')
 
-def get_kana_for_kanji(kana) -> str:
+def convert_katakana_to_hiragana(kana: str) -> str:
     return ''.join(
         chr(ord(char) + 0x3041 - 0x30A1) if 0x30A1 <= ord(char) <= 0x30F6 else char for char in kana)
 
@@ -253,7 +257,7 @@ def process_word(word) -> list[Moji]:
         surface_cut, okurigana = extract_okurigana_and_surface(word_surface)
         
         if word.feature.kana:
-            kana = get_kana_for_kanji(word.feature.kana)
+            kana = convert_katakana_to_hiragana(word.feature.kana)
             kana = kana[0:len(kana) - len(okurigana)] if okurigana else kana
             result.extend(split_by_kana(surface_cut, kana, okurigana))
         else:
