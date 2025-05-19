@@ -192,7 +192,7 @@ class Moji:
             # ruby タグ部分は一つの Moji にまとめて kana 付き、tag=True
             surf = m.group('surf')
             kana = m.group('kana')
-            surf_hira = convert_katakana_to_hiragana(kana).strip()
+            surf_hira = convert_katakana_to_hiragana(surf).strip()
             kana_hira = convert_katakana_to_hiragana(kana).strip()
             if surf_hira == kana_hira:
                 kana = ''
