@@ -7,6 +7,7 @@ import json
 import asyncio
 import logging
 from typing import List, Dict
+from chat_assistant import ModelManager
 from skpmem.async_pmem import PersistentMemory
 import asyncio
 from json_repair import repair_json
@@ -25,14 +26,15 @@ def unidic_download():
 from .chat_assistant_provider import get_chat_assistant
 
 class KatakanaTranslator:
-    def __init__(self, model: str = "deepseek/deepseek-chat"):
+    def __init__(self, model: str = None, models:ModelManager=None):
         """
         テキスト翻訳クラスの初期化
 
         Args:
             model (str, optional): 使用するAIモデル. デフォルトは"deepseek/deepseek-chat".
         """
-        self.model = model
+        self.model = model if model is not None else 'deepseek/deepseek-chat'
+        self.models = models if models is not None else ModelManager(models=[self.model])
         self.logger = logging.getLogger(__name__)
         self.memory = PersistentMemory("cache.db")
 
@@ -65,7 +67,7 @@ class KatakanaTranslator:
         prompt_text = ("次の英単語および数字を英語風のカタカナ読みにするとどうなりますか？\n"
                        "Python の dict 型で出力してください。コメントや補足は不要です。\n")
 
-        assistant = get_chat_assistant(model=self.model, memory=self.memory)
+        assistant = get_chat_assistant(model=self.model, memory=self.memory, models=self.models)
         response = await assistant.chat("", f"{prompt_text}\n\n{words}")
         self.logger.debug(response)
         return json.loads(repair_json(response))
@@ -285,11 +287,14 @@ def add_furigana(text: str) -> list[Moji]:
        
     return result
 
-async def convert_furigana(text: str, tag: bool = False, separator: bool = True, adjust_ai: bool = True, memory=None, model=None, temperature=None) -> list[Moji]:
+async def convert_furigana(text: str, tag: bool = False, separator: bool = True, adjust_ai: bool = True, memory=None, model=None, temperature=None, models:ModelManager=None) -> list[Moji]:
     furigana = add_furigana(text)
 
+    model = model if model is not None else 'deepseek/deepseek-chat'
+    models = models if models is not None else ModelManager(models=[model])
+
     flag_set_kana = False
-    async with KatakanaTranslator() as translator:
+    async with KatakanaTranslator(models=models) as translator:
         translated_dict = await translator.translate_dict(text)
         result = []
         for moji in furigana:
@@ -306,11 +311,9 @@ async def convert_furigana(text: str, tag: bool = False, separator: bool = True,
     
     if adjust_ai and flag_set_kana:
         result_text = ''.join(map(str, result))
-        if model is None:
-            model = "deepseek/deepseek-chat"
         if temperature is None:
             temperature = 0.0
-        async with get_chat_assistant(memory=memory, model=model, temperature=temperature) as assistant:
+        async with get_chat_assistant(memory=memory, models=models, model=model, temperature=temperature) as assistant:
             prmpt = f"""
 原文の漢字とアルファベットにrubyタグを使って読み仮名としてルビを付けました。
 ルビの読み仮名の内容が間違っている場合は修正してください。
@@ -346,17 +349,18 @@ async def main():
             text = """
             LibreChatのdatabase全体をtext形式でdumpする方法について。
             お弁当を食べながら空を見上げているうちに、お弁当箱は空になった。
-            a123, http://example.com, superuser, 123456
-            Ubuntuは、Desktop版とServer版の2つのEditionがあります。
-            Mongoの意味は何ですか？知らんけど。GEMINI_API_KEY
-            生け花を生き甲斐にした生え抜きの生娘、生絹を生業に生計たてた。
-            生い立ちは生半可ではなかった。
             """
             for line in text.split('\n'):
                 line = line.strip()
                 if not line:
                     continue
-                result = await convert_furigana(line.strip(), tag=True, separator=False, memory=memory, adjust_ai=True)
+                result = await convert_furigana(
+                    line.strip(), 
+                    tag=True, 
+                    separator=False, 
+                    memory=memory, 
+                    adjust_ai=True, 
+                    models=ModelManager(models=["gemini/gemini-2.5-flash-preview-05-20"]))
                 print(''.join(map(str, result)))
         except Exception as e:
             logging.exception(f"{log_name}: 例外発生: {e}")
