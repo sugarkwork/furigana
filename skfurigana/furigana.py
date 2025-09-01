@@ -8,7 +8,7 @@ import asyncio
 import logging
 from typing import List, Dict
 from chat_assistant import ModelManager
-from skpmem.async_pmem import PersistentMemory
+from skpmem import PersistentMemory
 import asyncio
 from json_repair import repair_json
 
@@ -292,6 +292,7 @@ async def convert_furigana(text: str, tag: bool = False, separator: bool = True,
 
     model = model if model is not None else 'deepseek/deepseek-chat'
     models = models if models is not None else ModelManager(models=[model])
+    models.models.append(model)
 
     flag_set_kana = False
     async with KatakanaTranslator(models=models) as translator:
@@ -343,7 +344,7 @@ async def convert_furigana(text: str, tag: bool = False, separator: bool = True,
 
 async def main():
     logging.basicConfig(level=logging.ERROR)
-    from skpmem.async_pmem import PersistentMemory
+    from skpmem import PersistentMemory
     async with PersistentMemory("cache.db") as memory:
         try:
             text = """
@@ -354,13 +355,15 @@ async def main():
                 line = line.strip()
                 if not line:
                     continue
+                
                 result = await convert_furigana(
                     line.strip(), 
                     tag=True, 
                     separator=False, 
                     memory=memory, 
                     adjust_ai=True, 
-                    models=ModelManager(models=["gemini/gemini-2.5-flash-preview-05-20"]))
+                    models=ModelManager(models=["gemini/gemini-2.5-flash"]))
+                
                 print(''.join(map(str, result)))
         except Exception as e:
             logging.exception(f"{log_name}: 例外発生: {e}")
